@@ -1,2 +1,3 @@
 # JoshuaDDM
-Drift Diffusion Model for AI Judging
+**Drift Diffusion Model for AI Judging**
+
