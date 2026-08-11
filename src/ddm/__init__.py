@@ -19,6 +19,11 @@ from src.ddm.drift import (
     TimeScale,
     default_evidence_source,
 )
+from src.ddm.evidence import (
+    ActivationEvidenceExtractor,
+    ToolCallEvidenceExtractor,
+    build_default_tool_call_extractor,
+)
 
 __all__ = [
     "DDMConfig",
@@ -27,4 +32,7 @@ __all__ = [
     "EvidenceStep",
     "TimeScale",
     "default_evidence_source",
+    "ActivationEvidenceExtractor",
+    "ToolCallEvidenceExtractor",
+    "build_default_tool_call_extractor",
 ]

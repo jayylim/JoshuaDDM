@@ -49,7 +49,7 @@ class TimeScale(str, Enum):
     different deployment contexts (chat, agents, multi-agent systems) --
     only the TimeScale (and the evidence source feeding it) needs to change.
 
-    TOKEN     -> one step per generated token (simplest spython -m pip install numpytarting point,
+    TOKEN     -> one step per generated token (simplest starting point,
                  see project_idea.md "Recommended Time Scale")
     LAYER     -> one step per transformer layer within a single forward pass
                  (for "at what depth does evidence become detectable?")
