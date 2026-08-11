@@ -22,3 +22,6 @@
 ### Using LLMs in Cursor
 - `ollama list` to check which models are loaded
 - `ollama run qwen2.5:1.5b-instruct` to run the instruct model
+
+
+### Prompt 1  
