@@ -16,7 +16,7 @@ raw signal described in project_idea.md ("Evidence Signals"):
 
 1. `ActivationEvidenceExtractor` -- the raw signal IS already numeric: a
    specific transformer activation vector, explicitly selected by layer and
-   token position elsewhere (e.g. in `src/activations.py`, via
+   token position elsewhere (e.g. in `src/ddm/activations.py`, via
    `hidden_states[layer_index][0, token_index, :]`). Turning it into a
    scalar here means projecting/pooling a vector down to one float.
 
@@ -82,7 +82,7 @@ class ActivationEvidenceExtractor:
     evidence value for the DDM.
 
     Expected `raw_signal` when called: a 1-D vector of length `hidden_size`
-    (or any shape flattenable to it) -- e.g., using `src/activations.py`:
+    (or any shape flattenable to it) -- e.g., using `src/ddm/activations.py`:
 
         raw_signal = hidden_states[layer_index][0, -1, :]   # last token,
                                                               # chosen layer
@@ -123,7 +123,7 @@ class ActivationEvidenceExtractor:
         vector = _to_numpy_vector(raw_signal)
         # ^ THIS line is what makes the extractor agnostic to whether the
         #   caller passes a torch.Tensor straight from a Hugging Face model
-        #   (see src/activations.py) or a plain numpy array / list.
+        #   (see src/ddm/activations.py) or a plain numpy array / list.
 
         if vector.size == 0:
             return 0.0

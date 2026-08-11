@@ -380,36 +380,12 @@ class DriftDiffusionModel:
 
 
 # ---------------------------------------------------------------------------
-# Minimal smoke test / usage demo (synthetic evidence, no real LLM yet).
+# Runnable smoke-test / demo / plotting script.
 # ---------------------------------------------------------------------------
-if __name__ == "__main__":
-    # This block only demonstrates the plumbing above works end-to-end. It
-    # uses fake, randomly biased "evidence" in place of a real probe/model
-    # signal -- replace `synthetic_evidence_stream` with real per-token /
-    # per-layer signals once the evidence source is implemented.
-
-    demo_config = DDMConfig(
-        drift_rate=0.05,
-        decision_boundary=1.0,
-        starting_point=0.0,
-        noise_scale=0.2,
-        time_step_size=1.0,
-        time_scale=TimeScale.TOKEN,
-        max_steps=200,
-        random_seed=0,
-    )
-
-    ddm = DriftDiffusionModel(config=demo_config)
-
-    def synthetic_evidence_stream(n: int) -> Iterable[float]:
-        # Stand-in for "one scalar evidence score per generated token."
-        rng = np.random.default_rng(1)
-        for _ in range(n):
-            yield float(rng.normal(loc=0.0, scale=0.05))
-
-    final_decision = ddm.run(synthetic_evidence_stream(demo_config.max_steps))
-
-    print("Decision:", final_decision)
-    print("Decision step:", ddm.decision_step)
-    print("Final accumulator:", round(ddm.accumulator, 4))
-    print("Trajectory (first 10 steps):", np.round(ddm.get_trajectory()[:10], 4))
+# Deliberately NOT included in this module: this file stays a pure DDM
+# math/engine library (no plotting, no demo-config, no matplotlib
+# dependency). The runnable demo that wires this engine up to the real
+# evidence pipeline (`src/ddm/evidence.py`) and renders diagnostic plots
+# lives in `src/ddm/runner.py` -- run it with:
+#
+#     python -m src.ddm.runner

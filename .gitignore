@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# DDM demo output (generated plots, see src/ddm/runner.py)
+src/ddm/figures/

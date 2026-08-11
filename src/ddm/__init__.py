@@ -36,3 +36,9 @@ __all__ = [
     "ToolCallEvidenceExtractor",
     "build_default_tool_call_extractor",
 ]
+
+# Note: src.ddm.activations is intentionally NOT imported/re-exported here.
+# It is a simple standalone script (loads the model and runs a forward pass
+# as soon as it's imported), so importing it from this package's __init__
+# would trigger a model load/download every time `src.ddm` is imported.
+# Run it directly instead: `python -m src.ddm.activations`.
