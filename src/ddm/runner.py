@@ -1,19 +1,31 @@
 """
 src/ddm/runner.py
 
-Runnable smoke-test / demo script for the DDM judge: wires
-`DriftDiffusionModel` (see `src/ddm/drift.py`) up to the REAL evidence
-pipeline in `src/ddm/evidence.py` (`ActivationEvidenceExtractor`), using
-synthetic activation vectors in place of real hidden states, since there is
-no real trained probe yet. `probe_direction=None` (the default) makes the
-extractor fall back to a simple mean-of-activation placeholder -- swap in
-real fitted probe weights there once one exists.
+Runnable smoke-test / demo script for the DDM judge. Wires together the
+full real pipeline:
+
+    src/ddm/activations.py  -- loads a real model, captures real per-token
+                                hidden-state activations for a prompt
+            |
+            v
+    src/ddm/evidence.py     -- `real_activation_stream` turns those
+                                activations into a raw-signal stream;
+                                `ActivationEvidenceExtractor` turns each raw
+                                activation vector into one scalar (still
+                                `probe_direction=None` -- mean-pooling --
+                                since no trained probe exists yet)
+            |
+            v
+    src/ddm/drift.py        -- `DriftDiffusionModel` accumulates those
+                                per-step scalars until a decision boundary
+                                is crossed
 
 This script was split out of `src/ddm/drift.py`'s old `__main__` block so
 that `drift.py` stays a pure DDM math/engine library (no plotting, no
-demo-config, no matplotlib dependency) -- see the note at the bottom of
-`drift.py`. This module is the "batteries included" demo: it runs the DDM,
-prints a summary, and renders diagnostic plots of the accumulation process.
+demo-config, no matplotlib/transformers dependency) -- see the note at the
+bottom of `drift.py`. This module is the "batteries included" demo: it runs
+the DDM, prints a summary, and renders diagnostic plots of the accumulation
+process.
 
 Run directly:
     python -m src.ddm.runner
@@ -26,20 +38,22 @@ Output: two PNGs written to `src/ddm/figures/`:
        point marked. This is the core "does the evidence cross a boundary?"
        visualization of how the DDM behaves as a sequential judge.
     2. multi_trial_summary.png -- many independent trials run under the
-       SAME config (only the noise differs), showing (a) all trajectories
-       overlaid/color-coded by final decision, and (b) a histogram of
-       decision step ("detection latency") split by decision outcome. This
-       is the classic DDM reaction-time-distribution view, and is essential
-       for a meta-controller: a single trajectory can't show whether the
-       judge is fast-but-noisy or slow-but-reliable, or whether its verdicts
-       are dominated by noise rather than by real evidence (see
-       project_idea.md's accuracy / false-positive-rate / detection-latency
-       evaluation metrics).
+       SAME config and the SAME real activation stream (only the DDM's own
+       drift/noise RNG differs between trials), showing (a) all
+       trajectories overlaid/color-coded by final decision, and (b) a
+       histogram of decision step ("detection latency") split by decision
+       outcome. This is the classic DDM reaction-time-distribution view,
+       and is essential for a meta-controller: a single trajectory can't
+       show whether the judge is fast-but-noisy or slow-but-reliable, or
+       whether its verdicts are dominated by noise rather than by real
+       evidence (see project_idea.md's accuracy / false-positive-rate /
+       detection-latency evaluation metrics).
 """
 
 from __future__ import annotations
 
 import dataclasses
+import itertools
 from pathlib import Path
 from typing import Iterable, List
 
@@ -63,13 +77,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from src.ddm.drift import DDMConfig, DriftDiffusionModel, TimeScale
-from src.ddm.evidence import ActivationEvidenceExtractor
-
-
-HIDDEN_SIZE = 8
-# ^ Stand-in for a real model's hidden_size (e.g. 1536 for
-#   Qwen/Qwen2.5-1.5B-Instruct, see src/ddm/activations.py). Kept small
-#   here purely so the synthetic demo runs fast and prints/plots readably.
+from src.ddm.evidence import ActivationEvidenceExtractor, DEFAULT_PROMPT, real_activation_stream
 
 FIGURES_DIR = Path(__file__).resolve().parent / "figures"
 # ^ Generated artifacts, not source -- see .gitignore.
@@ -89,8 +97,8 @@ def build_demo_config() -> DDMConfig:
     return DDMConfig(
         drift_rate=0.01,
         decision_boundary=1.0,  # 0.5-3.0 usually
-        starting_point=0.3,  # 0.3-0.7 usually
-        noise_scale=1.0,  # fixed noise scale for now
+        starting_point=0,  # 0.3-0.7 usually
+        noise_scale=0.1,  # fixed noise scale for now
         time_step_size=1.0,
         time_scale=TimeScale.TOKEN,
         max_steps=200,
@@ -98,22 +106,36 @@ def build_demo_config() -> DDMConfig:
     )
 
 
-def synthetic_activation_stream(
-    n: int, hidden_size: int, seed: int
+def load_activation_vectors(prompt_text: str = DEFAULT_PROMPT) -> List[np.ndarray]:
+    """
+    Materialize the REAL per-token activation stream for `prompt_text` (see
+    `src/ddm/evidence.py`'s `real_activation_stream`, which sources from
+    `src/ddm/activations.py`) into a list, once. Loaded eagerly (rather than
+    left as a lazy generator) so it can be reused/cycled across every trial
+    below without re-running the model's forward pass each time.
+    """
+    return list(real_activation_stream(prompt_text=prompt_text))
+
+
+def _looped_activation_stream(
+    activation_vectors: List[np.ndarray], n_steps: int
 ) -> Iterable[np.ndarray]:
     """
-    Stand-in for "one activation vector (e.g. last-layer hidden state for
-    the last token) per generated token." Small scale keeps the mean-pooled
-    fallback evidence in a realistic, modest range. Replace with real
-    per-token/per-layer hidden states (e.g. from `src/ddm/activations.py`)
-    once a real trained probe exists.
+    Cycle through a short REAL per-token activation sequence to fill up to
+    `n_steps` DDM steps. Needed because one prompt's real token count
+    (typically far fewer than `max_steps`) is usually much shorter than the
+    number of steps the DDM demo runs for -- this repeats the one real
+    forward pass's activations so the accumulator has enough real signal to
+    potentially reach a decision boundary. Replace with a genuine per-token
+    streaming signal (e.g. one real forward pass per generated token) once
+    the DDM is wired into an actual generation loop.
     """
-    rng = np.random.default_rng(seed)
-    for _ in range(n):
-        yield rng.normal(loc=0.0, scale=0.05, size=hidden_size)
+    if not activation_vectors:
+        return
+    yield from itertools.islice(itertools.cycle(activation_vectors), n_steps)
 
 
-def run_trial(config: DDMConfig, activation_seed: int) -> DriftDiffusionModel:
+def run_trial(config: DDMConfig, activation_vectors: List[np.ndarray]) -> DriftDiffusionModel:
     """Run exactly one DDM trial to completion (decision or max_steps) and return it."""
     evidence_source = ActivationEvidenceExtractor()
     # ^ probe_direction=None (default): no trained probe exists yet, so this
@@ -122,7 +144,7 @@ def run_trial(config: DDMConfig, activation_seed: int) -> DriftDiffusionModel:
     #   probe_bias=<fitted intercept>) once a real probe has been trained.
 
     ddm = DriftDiffusionModel(config=config, evidence_fn=evidence_source)
-    ddm.run(synthetic_activation_stream(config.max_steps, HIDDEN_SIZE, seed=activation_seed))
+    ddm.run(_looped_activation_stream(activation_vectors, config.max_steps))
     return ddm
 
 
@@ -196,19 +218,26 @@ def plot_single_trial(ddm: DriftDiffusionModel, config: DDMConfig, save_path: Pa
     plt.close(fig)
 
 
-def run_multi_trial(config: DDMConfig, n_trials: int) -> List[DriftDiffusionModel]:
+def run_multi_trial(
+    config: DDMConfig, activation_vectors: List[np.ndarray], n_trials: int
+) -> List[DriftDiffusionModel]:
     """
-    Run `n_trials` independent trials under the SAME config, varying only
-    the RNG seeds (both the DDM's internal noise and the synthetic
-    activation stream) so trial-to-trial variability is entirely due to
-    noise, not a changing config -- exactly what the multi-trial plot below
-    needs to show a meaningful decision-time distribution.
+    Run `n_trials` independent trials under the SAME config and the SAME
+    real activation vectors.
+    Vary DDM's internal drift/noise randomly (by generated RNG seed) per trial. 
+    
+    Reusing one real forward pass's activations across
+    all trials (rather than re-running the model `n_trials` times) keeps
+    this fast; trial-to-trial variability is then entirely due to the DDM's
+    own stochastic accumulation (not a changing evidence source or config)
+    -- exactly what the multi-trial plot below needs to show a meaningful
+    decision-time distribution.
     """
     trials = []
     base_seed = config.random_seed or 0
     for i in range(n_trials):
         trial_config = dataclasses.replace(config, random_seed=base_seed + i)
-        trials.append(run_trial(trial_config, activation_seed=1000 + i))
+        trials.append(run_trial(trial_config, activation_vectors))
     return trials
 
 
@@ -303,7 +332,12 @@ def plot_multi_trial(
 def main() -> None:
     config = build_demo_config()
 
-    ddm = run_trial(config, activation_seed=1)
+    print(f"Loading real activations for prompt: {DEFAULT_PROMPT!r}")
+    activation_vectors = load_activation_vectors()
+    print(f"Got {len(activation_vectors)} real per-token activation vectors "
+          f"(hidden_size={activation_vectors[0].shape[0]})")
+
+    ddm = run_trial(config, activation_vectors)
 
     print("Decision:", ddm.decision)
     print("Decision step:", ddm.decision_step)
@@ -314,7 +348,7 @@ def main() -> None:
     plot_single_trial(ddm, config, single_trial_path)
     print(f"Saved single-trial trajectory plot to {single_trial_path}")
 
-    trials = run_multi_trial(config, n_trials=N_MULTI_TRIALS)
+    trials = run_multi_trial(config, activation_vectors, n_trials=N_MULTI_TRIALS)
     multi_trial_path = FIGURES_DIR / "multi_trial_summary.png"
     plot_multi_trial(trials, config, multi_trial_path)
     print(f"Saved multi-trial summary plot to {multi_trial_path}")

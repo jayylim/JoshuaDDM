@@ -12,8 +12,9 @@ JoshuaDDM/
 ├── requirements.txt         # Shared Python dependencies
 ├── src/
 │   ├── ddm/                 # The DDM judge package and evidence helpers
-│   │   ├── activations.py   # Standalone script: load model, capture hidden states
-│   │   ├── evidence.py      # Evidence sources: activations, tool calls, etc.
+│   │   ├── activations.py   # Loads a model, captures real hidden-state activations
+│   │   ├── evidence.py      # Evidence sources: real activations (via activations.py),
+│   │   │                    # tool calls, etc.
 │   │   ├── drift.py         # DDMConfig, DriftDiffusionModel, TimeScale, etc.
 │   │   ├── runner.py        # Runnable demo: wires drift.py + evidence.py together,
 │   │   │                    # prints a trial summary, and saves plots to figures/
@@ -28,12 +29,15 @@ JoshuaDDM/
 
 `src/ddm/` and `src/model-testing/` are intentionally separate:
 `src/ddm/drift.py` contains the accumulator/statistics logic,
-`src/ddm/evidence.py` converts raw signals into scalar evidence, and
-`src/ddm/activations.py` is a simple standalone script showing how to load a
-Hugging Face model/tokenizer and capture hidden-state activations for a
-prompt (run it directly, don't import it). `src/model-testing/` remains the
-prompt/response collection area. See `project_idea.md` for the research design
-this code is meant to support.
+`src/ddm/activations.py` loads a Hugging Face model/tokenizer and captures
+real per-token hidden-state activations for a prompt, `src/ddm/evidence.py`
+imports those real activations (via `real_activation_stream`) and converts
+them into scalar evidence (still via a placeholder mean-pooling "probe" --
+see `ActivationEvidenceExtractor`, since no trained probe exists yet), and
+`src/ddm/runner.py` wires evidence.py's output into `DriftDiffusionModel`
+and plots the result. `src/model-testing/` remains the prompt/response
+collection area, independent of this pipeline. See `project_idea.md` for
+the research design this code is meant to support.
 
 `src/model-testing/runs/outputs.jsonl` saves records shaped like:
  ```
@@ -59,8 +63,15 @@ The agent is now entirely **interactive** (requires manual input at every step) 
   - Define the concrete evidence source (probe on hidden states, classifier
     on generated text, tool-call heuristic, ...) and implement it as an
     `EvidenceSource` in `src/ddm/` (e.g. a new `src/ddm/evidence.py`)
-  - Adapt `src/ddm/activations.py` to select a specific layer/token activation
-    vector, then feed it into `ActivationEvidenceExtractor`
+  - ~~Adapt `src/ddm/activations.py` to select a specific layer/token
+    activation vector, then feed it into `ActivationEvidenceExtractor`~~
+  - Fit a real probe (`ActivationEvidenceExtractor.probe_direction` /
+    `.probe_bias`) on labeled hidden states -- currently still a
+    mean-pooling placeholder since no trained probe exists yet
+  - Replace `src/ddm/runner.py`'s looped/repeated single-forward-pass
+    activations with a genuine per-generated-token streaming signal (e.g.
+    one real forward pass per generated token, or `model.generate(...,
+    output_hidden_states=True)`)
   - Wire `src/model-testing/runs/test_agent.py` (or a new capture script) to
     emit any non-activation raw signals the evidence source needs
   - Add a labeled dataset of benign/malicious trials for evaluation
@@ -82,9 +93,10 @@ Running `test_agent.py` will ask for prompts from the prompt list
 - `:list` to see all available prompts
 - `:p p###` to input desired prompt
 
-To smoke-test the DDM engine on its own (real evidence pipeline in
-`src/ddm/evidence.py`, but synthetic activation values since no LLM/probe is
-involved yet) and generate diagnostic plots:
+To smoke-test the full real pipeline (`src/ddm/activations.py` ->
+`src/ddm/evidence.py` -> `src/ddm/drift.py`) -- real per-token model
+activations feeding the DDM, though still via a placeholder mean-pooling
+"probe" since no trained probe exists yet -- and generate diagnostic plots:
 
 ```bash
 python -m src.ddm.runner

@@ -23,6 +23,7 @@ from src.ddm.evidence import (
     ActivationEvidenceExtractor,
     ToolCallEvidenceExtractor,
     build_default_tool_call_extractor,
+    real_activation_stream,
 )
 
 __all__ = [
@@ -35,10 +36,15 @@ __all__ = [
     "ActivationEvidenceExtractor",
     "ToolCallEvidenceExtractor",
     "build_default_tool_call_extractor",
+    "real_activation_stream",
 ]
 
-# Note: src.ddm.activations is intentionally NOT imported/re-exported here.
-# It is a simple standalone script (loads the model and runs a forward pass
-# as soon as it's imported), so importing it from this package's __init__
-# would trigger a model load/download every time `src.ddm` is imported.
-# Run it directly instead: `python -m src.ddm.activations`.
+# Note: src.ddm.activations IS now transitively imported here (via
+# src.ddm.evidence, which sources real activations/model defaults from it --
+# see `real_activation_stream` above). This is safe: activations.py only
+# *defines* functions at import time (model loading is deferred to
+# `load_model_and_tokenizer()` / `get_hidden_states()`, both lru_cached), so
+# `import src.ddm` no longer triggers a model load/download as a side
+# effect. Actually loading the model happens the first time
+# `real_activation_stream(...)` (or `src.ddm.activations` functions
+# directly) is called -- e.g. in `src/ddm/runner.py`.

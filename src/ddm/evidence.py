@@ -33,7 +33,7 @@ trained probe or learned risk model once labeled data exists.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Mapping, Optional, Sequence, Union
+from typing import Iterable, Mapping, Optional, Sequence, Union
 
 import numpy as np
 
@@ -41,6 +41,18 @@ try:
     import torch
 except ImportError:  # torch is only needed if activations are torch.Tensors
     torch = None  # type: ignore[assignment]
+
+from src.ddm.activations import (
+    DEFAULT_LAYER_INDEX,
+    DEFAULT_MODEL_NAME,
+    DEFAULT_PROMPT,
+    get_hidden_states,
+    iter_token_activations,
+)
+# ^ Sourcing REAL activations (and the model/layer/prompt defaults that
+#   produced them) from src/ddm/activations.py -- see `real_activation_stream`
+#   below. This module still doesn't decide the *probe* (see
+#   ActivationEvidenceExtractor.probe_direction=None), only the raw signal.
 
 
 ArrayLike = Union[np.ndarray, "torch.Tensor", Sequence[float]]
@@ -69,6 +81,33 @@ def _to_numpy_vector(value: ArrayLike) -> np.ndarray:
         #   (e.g. forgetting to index out the batch/sequence dimensions).
 
     return array
+
+
+# ---------------------------------------------------------------------------
+# Real raw-signal source: per-token activation stream from an actual model.
+# ---------------------------------------------------------------------------
+def real_activation_stream(
+    prompt_text: str = DEFAULT_PROMPT,
+    model_name: str = DEFAULT_MODEL_NAME,
+    layer_index: int = DEFAULT_LAYER_INDEX,
+) -> Iterable[np.ndarray]:
+    """
+    Build a REAL per-token activation stream by running an actual forward
+    pass of `model_name` over `prompt_text` (via `src/ddm/activations.py`)
+    and yielding one activation vector per token position, in order. This
+    is what feeding a `DriftDiffusionModel` "one step per token"
+    (`TimeScale.TOKEN`) means when driven by a real model instead of
+    synthetic noise -- see `src/ddm/runner.py` for how it's wired in.
+
+    NOTE: this only makes the RAW SIGNAL real. `ActivationEvidenceExtractor`
+    (below) still needs `probe_direction=None` (its default) since no
+    trained probe exists yet -- it falls back to mean-pooling each
+    activation vector into a scalar. Once a probe is trained, pass its
+    fitted weights to `ActivationEvidenceExtractor` and this function's
+    output plugs straight into it unchanged.
+    """
+    hidden_states, _tokenized_inputs = get_hidden_states(prompt_text, model_name=model_name)
+    yield from iter_token_activations(hidden_states, layer_index=layer_index)
 
 
 # ---------------------------------------------------------------------------
