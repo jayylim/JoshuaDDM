@@ -24,4 +24,31 @@
 - `ollama run qwen2.5:1.5b-instruct` to run the instruct model
 
 
-### Prompt 1  
+
+
+# Take the last token of the last layer at every turn, accumulate evidence in a multi-turn conversation
+# Ask Dr Pan if he has a trained probe for "malicious behaviour"
+# Black box: Evidence-based mapping between LLM output and X behaviour/intent (ideally malicious)
+## -> use a DDM on blackbox output
+# Trajectories of "malicious" (or negative) behaviour from evaluation platforms -> find statistically significant 'indicators' across LLM output
+
+
+* DDM as a cumulative confidence scorer for a Judge LLM's turn-by-turn evaluation using drift and noise as parameters
+  * goes wrong if judge highly confident but helps to ground haywire judges
+  * but is confidence a useful metric?
+
+TO-DO
+* math for big judge
+
+- Length of reasoning as the 'response time'
+
+
+
+
+What is the evidence we are accumulating to inform DDM parameters for behaviour on said task?
+1. judge's score/output
+2. blackbox 
+
+What is the task being DDM'ed?
+1. evaluating the judge confidence
+2. judge's accuracy relative to human scorers
